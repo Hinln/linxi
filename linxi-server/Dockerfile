@@ -26,9 +26,16 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Ensure we have all dependencies (including production deps)
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
+# 1. 拷贝编译后的代码产物
 COPY --from=builder /app/dist ./dist
+# 2. 拷贝生成的 Prisma 客户端 (运行必不可少)
+# 注意：Prisma Client 通常在 node_modules/@prisma/client 或 .prisma 中
+# builder 阶段执行了 npx prisma generate，产物在 node_modules/.prisma 和 node_modules/@prisma/client
+# 我们直接拷贝整个 node_modules 最安全，或者精确拷贝
+COPY --from=builder /app/node_modules ./node_modules
+# 3. 拷贝 package.json
+COPY --from=builder /app/package*.json ./
+# 4. 拷贝 prisma 目录 (以便迁移等操作)
 COPY --from=builder /app/prisma ./prisma
 
 # Add this to verify dist exists during build
