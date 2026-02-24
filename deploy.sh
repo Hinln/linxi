@@ -61,20 +61,67 @@ check_ports() {
     local ports=(80 443 3000 5432 6379)
     local conflict=false
     
+    # Initialize global override content variable
+    OVERRIDE_CONTENT="services:
+  app:
+    networks:
+      - 1panel-network
+      - linxi-network
+"
+    
+    # 1Panel 端口复用逻辑
+    local has_1panel=false
+    if [[ -d "/opt/1panel" ]]; then has_1panel=true; fi
+
     for port in "${ports[@]}"; do
-        if netstat -tuln | grep -q ":$port "; then
+        if ss -tuln | grep -q ":$port "; then
             log_warn "端口 $port 已被占用！"
             conflict=true
+            
+            # 自动降级逻辑
+            if [[ "$port" == "5432" || "$port" == "6379" ]] && $has_1panel; then
+                read -p "检测到端口 $port 被占用且存在 1Panel。是否复用面板数据库/Redis？(y/n, 默认 y): " REUSE_DB
+                REUSE_DB=${REUSE_DB:-y}
+                if [[ "$REUSE_DB" == "y" ]]; then
+                    log_info "已选择复用面板服务，将在后续步骤中配置连接。"
+                    
+                    # 禁用对应服务 - Accumulate to variable
+                    if [[ "$port" == "5432" ]]; then
+                        OVERRIDE_CONTENT="${OVERRIDE_CONTENT}  postgres: { profiles: ['donotstart'] }
+"
+                        log_success "已禁用内置 Postgres 容器。"
+                    fi
+                    if [[ "$port" == "6379" ]]; then
+                        OVERRIDE_CONTENT="${OVERRIDE_CONTENT}  redis: { profiles: ['donotstart'] }
+"
+                        log_success "已禁用内置 Redis 容器。"
+                    fi
+                    
+                    # 标记冲突已解决 (软解决)
+                    conflict=false
+                fi
+            elif [[ "$port" == "80" || "$port" == "443" ]] && $has_1panel; then
+                log_info "Web 端口被占用，属于正常现象（由 1Panel OpenResty 接管）。"
+                log_info "请后续在面板中创建反向代理网站指向本服务端口 (3000)。"
+                conflict=false
+            fi
         fi
     done
     
+    # Append network definition
+    OVERRIDE_CONTENT="${OVERRIDE_CONTENT}
+networks:
+  1panel-network:
+    external: true
+"
+    
     if $conflict; then
-        read -p "检测到端口冲突，是否继续? (y/n): " CONTINUE
+        read -p "检测到未解决的端口冲突，是否继续? (y/n): " CONTINUE
         if [[ "$CONTINUE" != "y" ]]; then
             exit 1
         fi
     else
-        log_success "端口检查通过。"
+        log_success "端口检查通过 (或已自动规避)。"
     fi
 }
 
@@ -139,6 +186,7 @@ adapt_1panel() {
                 cp -r . "$target_dir"
                 log_success "项目已复制到 $target_dir，请跳转到该目录继续操作。"
                 cd "$target_dir" || exit 1
+                TARGET_DIR="$target_dir"
             fi
         fi
     fi
@@ -149,11 +197,10 @@ adapt_1panel() {
         
         # 修改 docker-compose.yml
         if ! grep -q "1panel-network" docker-compose.yml; then
-            log_info "正在将后端服务加入 1panel-network..."
+            log_info "正在自动注入网络配置..."
             
-            # 这是一个简单的追加，实际生产建议使用 yq 工具，这里为了不依赖 yq 使用 sed/cat 拼接
-            # 假设 docker-compose.yml 结尾是 networks 定义，或者没有
-            # 为简单起见，我们直接追加 external network 定义
+            # Use sed to inject networks block before the end of file or append it
+            # Since we want to automate, let's append it safely if not present
             
             cat >> docker-compose.yml <<EOF
 
@@ -163,10 +210,15 @@ networks:
   linxi-network:
     driver: bridge
 EOF
-            # 注意：这需要 docker-compose.yml 中 service 部分正确引用 networks: - 1panel-network
-            # 由于这是自动化脚本，直接修改 YAML 风险较大，我们提示用户
-            log_warn "已检测到 1panel-network，建议手动修改 docker-compose.yml 让 app 服务加入该网络，以便连接面板内的数据库。"
+            # Also need to update the service to use this network.
+            # We use the OVERRIDE_CONTENT variable now, so we don't write file here.
+            # Just ensure the variable has what we need.
+            # The variable is initialized with app network config in check_ports.
+            # So we just log here.
+            log_success "网络配置已准备就绪 (将在启动前写入覆盖文件)。"
         fi
+    else
+        log_info "未检测到 1panel-network，跳过网络配置。"
     fi
 }
 
@@ -175,26 +227,65 @@ EOF
 install_dependencies() {
     log_info "正在检查并安装依赖..."
     
-    local packages="git curl wget bc"
+    # Pre-install iproute2 for ss command
+    if [ -f /etc/debian_version ]; then
+        apt-get update
+        apt-get install -y iproute2
+    fi
+    
+    local packages="git curl wget bc net-tools"
     
     if [ -f /etc/debian_version ]; then
         apt-get update
         apt-get install -y $packages
+        
+        # Check docker command
+        check_docker_command
         
         # Install Docker if missing
         if ! command -v docker &> /dev/null; then
             curl -fsSL https://get.docker.com | sh
         fi
         
+        # Install Docker Compose Plugin if missing (for 'docker compose')
+        if [[ -z "$DOCKER_COM_CMD" ]]; then
+             apt-get install -y docker-compose-plugin || apt-get install -y docker-compose
+             check_docker_command # Re-check
+        fi
+        
         # Install Node.js if missing
         if ! command -v node &> /dev/null; then
-            curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+            # Using Nodesource new setup script for Node.js 20.x (LTS)
+            curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
             apt-get install -y nodejs
         fi
         
     elif [ -f /etc/redhat-release ]; then
         yum install -y $packages
         # CentOS Docker/Node install skipped for brevity
+        check_docker_command
+    fi
+    
+    # 强化目录与代码管理
+    if [ -d ".git" ]; then
+        log_info "检测到 Git 仓库，正在更新代码..."
+        git pull origin main || log_warn "Git 更新失败，将使用当前代码继续。"
+    else
+        # Only clone if directory is empty or almost empty (to avoid overwriting user changes if they just copied files)
+        # But here we are IN the directory.
+        # If we are running deploy.sh, we likely have the code.
+        # So we skip cloning if deploy.sh exists.
+        log_info "未检测到 Git 仓库，跳过代码更新。"
+    fi
+}
+
+check_docker_command() {
+    if docker compose version &> /dev/null; then
+        DOCKER_COM_CMD="docker compose"
+    elif command -v docker-compose &> /dev/null; then
+        DOCKER_COM_CMD="docker-compose"
+    else
+        DOCKER_COM_CMD=""
     fi
 }
 
@@ -204,19 +295,56 @@ deploy_backend() {
     # 确保 tsconfig.json 宽松模式
     # (已在前一步工具调用中修改)
 
-    if ! command -v docker-compose &> /dev/null; then
-        if ! docker compose version &> /dev/null; then
-             log_error "未检测到 Docker Compose。"
+    if [[ -z "$DOCKER_COM_CMD" ]]; then
+         log_error "未检测到 Docker Compose。尝试自动安装失败，请手动安装。"
+         exit 1
+    fi
+
+    # Ensure we are in the correct directory
+    # If adapted to 1Panel, we might have moved.
+    # We should rely on where the script is running if we moved it, 
+    # but adapt_1panel changes pwd.
+    
+    # 修正工作目录漂移
+    if [[ -n "$TARGET_DIR" ]]; then
+        cd "$TARGET_DIR" || exit 1
+    else
+        # Fallback to script dir
+        cd "$(dirname "$0")" || exit 1
+    fi
+
+    # 强制校验主配置文件
+    if [ ! -f "docker-compose.yml" ]; then
+        log_error "主配置文件 docker-compose.yml 丢失！请检查当前目录: $(pwd)"
+        exit 1
+    fi
+    
+    # Write the accumulated override content to file
+    # This ensures single write and includes all necessary configs
+    # 确保 override 文件写入到当前目录
+    if [[ -n "$OVERRIDE_CONTENT" ]]; then
+        echo "$OVERRIDE_CONTENT" > docker-compose.override.yml
+        log_info "已生成 docker-compose.override.yml"
+    fi
+
+    log_info "构建并启动容器 (使用 $DOCKER_COM_CMD)..."
+    # 显式指定文件进行启动，强制同时读取
+    if [[ -f "docker-compose.override.yml" ]]; then
+        if ! $DOCKER_COM_CMD -f docker-compose.yml -f docker-compose.override.yml up --build -d; then
+             log_error "容器启动失败。正在打印配置以供调试..."
+             $DOCKER_COM_CMD config
+             exit 1
+        fi
+    else
+        if ! $DOCKER_COM_CMD up --build -d; then
+             log_error "容器启动失败。"
              exit 1
         fi
     fi
 
-    log_info "构建并启动容器..."
-    docker-compose up --build -d
-
     log_info "等待数据库就绪并执行迁移 (重试 5 次)..."
     for i in {1..5}; do
-        if docker-compose exec -T app npx prisma migrate deploy; then
+        if $DOCKER_COM_CMD exec -T app npx prisma migrate deploy; then
             log_success "数据库迁移成功！"
             return 0
         fi
@@ -271,15 +399,45 @@ configure_environment() {
     read -p "OSS Region (默认 oss-cn-hangzhou.aliyuncs.com): " OSS_ENDPOINT
     OSS_ENDPOINT=${OSS_ENDPOINT:-oss-cn-hangzhou.aliyuncs.com}
     
+    # 短信服务
+    read -p "短信签名 (ALIYUN_SMS_SIGN_NAME, 默认 LinXi): " SMS_SIGN_NAME
+    SMS_SIGN_NAME=${SMS_SIGN_NAME:-LinXi}
+    read -p "短信模板 ID (ALIYUN_SMS_TEMPLATE_CODE, 例如 SMS_123456789): " SMS_TEMPLATE_CODE
+    
+    # 实人认证
+    read -p "实人认证场景 ID (ALIYUN_REAL_PERSON_SCENE_ID, 默认 100000): " RP_SCENE_ID
+    RP_SCENE_ID=${RP_SCENE_ID:-100000}
+    
+    if [[ -z "$SMS_TEMPLATE_CODE" ]]; then
+        log_warn "未输入短信模板 ID，短信功能将不可用。请稍后在 .env 中手动补全。"
+    fi
+    
     # 数据库 (默认本地 Docker)
-    read -p "数据库连接地址 (回车使用默认 Docker 内部连接): " DATABASE_URL
-    DATABASE_URL=${DATABASE_URL:-"postgresql://postgres:postgres@postgres:5432/linxi_db?schema=public"}
+    if grep -q "postgres: { profiles: \['donotstart'\] }" docker-compose.override.yml 2>/dev/null; then
+        log_info "已选择复用面板数据库，请输入 1Panel 中的数据库连接信息。"
+        # 尝试自动获取 IP (Docker Gateway)
+        DOCKER_GATEWAY=$(docker network inspect 1panel-network --format='{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null || echo "172.17.0.1")
+        read -p "数据库连接地址 (例如 postgresql://user:pass@$DOCKER_GATEWAY:5432/linxi_db?schema=public): " DATABASE_URL
+    else
+        read -p "数据库连接地址 (回车使用默认 Docker 内部连接): " DATABASE_URL
+        DATABASE_URL=${DATABASE_URL:-"postgresql://postgres:postgres@postgres:5432/linxi_db?schema=public"}
+    fi
     
     # Redis
-    read -p "Redis 主机 (默认 redis): " REDIS_HOST
-    REDIS_HOST=${REDIS_HOST:-redis}
-    read -p "Redis 端口 (默认 6379): " REDIS_PORT
-    REDIS_PORT=${REDIS_PORT:-6379}
+    if grep -q "redis: { profiles: \['donotstart'\] }" docker-compose.override.yml 2>/dev/null; then
+        log_info "已选择复用面板 Redis，请输入 1Panel 中的 Redis 连接信息。"
+        DOCKER_GATEWAY=$(docker network inspect 1panel-network --format='{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null || echo "172.17.0.1")
+        
+        read -p "Redis 主机 (建议使用 Docker 网关 $DOCKER_GATEWAY): " REDIS_HOST
+        REDIS_HOST=${REDIS_HOST:-$DOCKER_GATEWAY}
+        read -p "Redis 端口 (默认 6379): " REDIS_PORT
+        REDIS_PORT=${REDIS_PORT:-6379}
+    else
+        read -p "Redis 主机 (默认 redis): " REDIS_HOST
+        REDIS_HOST=${REDIS_HOST:-redis}
+        read -p "Redis 端口 (默认 6379): " REDIS_PORT
+        REDIS_PORT=${REDIS_PORT:-6379}
+    fi
     
     # 写入 .env
     update_env "API_DOMAIN" "$API_DOMAIN"
@@ -288,6 +446,9 @@ configure_environment() {
     update_env "ALIYUN_ACCESS_KEY_SECRET" "$ALIYUN_SK"
     update_env "ALIYUN_OSS_BUCKET" "$OSS_BUCKET"
     update_env "ALIYUN_OSS_REGION" "$OSS_ENDPOINT"
+    update_env "ALIYUN_SMS_SIGN_NAME" "$SMS_SIGN_NAME"
+    update_env "ALIYUN_SMS_TEMPLATE_CODE" "$SMS_TEMPLATE_CODE"
+    update_env "ALIYUN_REAL_PERSON_SCENE_ID" "$RP_SCENE_ID"
     update_env "DATABASE_URL" "$DATABASE_URL"
     update_env "REDIS_HOST" "$REDIS_HOST"
     update_env "REDIS_PORT" "$REDIS_PORT"
