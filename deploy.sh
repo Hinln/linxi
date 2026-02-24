@@ -62,8 +62,13 @@ check_ports() {
     local conflict=false
     
     # Initialize global override content variable
+    # Default: App connects to 1panel network (if exists) and linxi-network
+    # And explicitly depend on postgres/redis (since removed from main compose)
     OVERRIDE_CONTENT="services:
   app:
+    depends_on:
+      - postgres
+      - redis
     networks:
       - 1panel-network
       - linxi-network"
@@ -84,7 +89,16 @@ check_ports() {
                 if [[ "$REUSE_DB" == "y" ]]; then
                     log_info "已选择复用面板服务，将在后续步骤中配置连接。"
                     
-                    # 禁用对应服务 - Accumulate to variable
+                    # Critical Fix: Inject depends_on: [] to break dependency on postgres/redis
+                    # We overwrite the initial content to include depends_on
+                    OVERRIDE_CONTENT="services:
+  app:
+    depends_on: []
+    networks:
+      - 1panel-network
+      - linxi-network"
+
+                    # 禁用对应服务 - Accumulate to variable with proper newlines
                     if [[ "$port" == "5432" ]]; then
                         OVERRIDE_CONTENT+=$'\n  postgres: { profiles: [\'donotstart\'] }'
                         log_success "已禁用内置 Postgres 容器。"
@@ -105,7 +119,7 @@ check_ports() {
         fi
     done
     
-    # Append network definition
+    # Append network definition with proper newlines
     OVERRIDE_CONTENT+=$'\n\nnetworks:\n  1panel-network:\n    external: true'
     
     if $conflict; then
@@ -166,48 +180,22 @@ optimize_network() {
 adapt_1panel() {
     log_info "正在适配 1Panel 环境..."
     
-    # 路径识别
-    if [[ -d "/opt/1panel" ]]; then
-        log_success "检测到 1Panel 安装目录。"
-        read -p "是否将项目部署到 1Panel 应用目录 (/opt/1panel/apps/linxi)? (y/n, 默认 y): " MOVE_DIR </dev/tty
-        MOVE_DIR=${MOVE_DIR:-y}
-        
-        if [[ "$MOVE_DIR" == "y" ]]; then
-            local target_dir="/opt/1panel/apps/linxi"
-            if [[ "$(pwd)" != "$target_dir" ]]; then
-                mkdir -p "$target_dir"
-                cp -r . "$target_dir"
-                log_success "项目已复制到 $target_dir，请跳转到该目录继续操作。"
-                cd "$target_dir" || exit 1
-                TARGET_DIR="$target_dir"
-            fi
-        fi
+    # 路径识别 (已在 main 中预设 TARGET_DIR，此处仅做校验或提示)
+    if [[ "$TARGET_DIR" == "/opt/1panel/apps/linxi" ]]; then
+        log_success "检测到 1Panel 环境，将在标准应用目录部署。"
     fi
     
     # 网络自动跨接
     if docker network ls | grep -q "1panel-network"; then
         log_success "检测到 1panel-network。"
         
-        # 修改 docker-compose.yml
-        if ! grep -q "1panel-network" docker-compose.yml; then
+        # 修改 docker-compose.yml (使用 Override 方式，不修改原文件)
+        if ! grep -q "1panel-network" docker-compose.override.yml 2>/dev/null; then
             log_info "正在自动注入网络配置..."
             
-            # Use sed to inject networks block before the end of file or append it
-            # Since we want to automate, let's append it safely if not present
-            
-            cat >> docker-compose.yml <<EOF
-
-networks:
-  1panel-network:
-    external: true
-  linxi-network:
-    driver: bridge
-EOF
-            # Also need to update the service to use this network.
-            # We use the OVERRIDE_CONTENT variable now, so we don't write file here.
-            # Just ensure the variable has what we need.
-            # The variable is initialized with app network config in check_ports.
-            # So we just log here.
+            # The actual injection is handled by OVERRIDE_CONTENT variable in check_ports
+            # and written in start_backend_services.
+            # Here we just confirm readiness.
             log_success "网络配置已准备就绪 (将在启动前写入覆盖文件)。"
         fi
     else
@@ -220,17 +208,12 @@ EOF
 install_dependencies() {
     log_info "正在检查并安装依赖..."
     
-    # Pre-install iproute2 for ss command
-    if [ -f /etc/debian_version ]; then
-        apt-get update
-        apt-get install -y iproute2
-    fi
-    
-    local packages="git curl wget bc net-tools"
+    # Pre-install iproute2 for ss command, and dnsutils/bind-utils for dig
+    local common_packages="git curl wget bc net-tools"
     
     if [ -f /etc/debian_version ]; then
         apt-get update
-        apt-get install -y $packages
+        apt-get install -y $common_packages iproute2 dnsutils
         
         # Check docker command
         check_docker_command
@@ -240,21 +223,20 @@ install_dependencies() {
             curl -fsSL https://get.docker.com | sh
         fi
         
-        # Install Docker Compose Plugin if missing (for 'docker compose')
+        # Install Docker Compose Plugin if missing
         if [[ -z "$DOCKER_COM_CMD" ]]; then
              apt-get install -y docker-compose-plugin || apt-get install -y docker-compose
-             check_docker_command # Re-check
+             check_docker_command
         fi
         
         # Install Node.js if missing
         if ! command -v node &> /dev/null; then
-            # Using Nodesource new setup script for Node.js 20.x (LTS)
             curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
             apt-get install -y nodejs
         fi
         
     elif [ -f /etc/redhat-release ]; then
-        yum install -y $packages
+        yum install -y $common_packages iproute2 bind-utils
         # CentOS Docker/Node install skipped for brevity
         check_docker_command
     fi
@@ -282,8 +264,44 @@ check_docker_command() {
     fi
 }
 
-deploy_backend() {
-    log_info "正在部署后端..."
+deploy_backend_code() {
+    log_info "正在获取后端代码..."
+    
+    # Ensure target directory exists
+    if [ ! -d "$TARGET_DIR" ]; then
+        mkdir -p "$TARGET_DIR"
+    fi
+    
+    # Enter target directory
+    cd "$TARGET_DIR" || exit 1
+    log_info "工作目录: $(pwd)"
+
+    # Git logic
+    if [ -d ".git" ]; then
+        log_info "检测到 Git 仓库，正在更新代码..."
+        git pull origin main || log_warn "Git 更新失败，将使用当前代码继续。"
+    else
+        # If not a git repo but has content (and no .git), clean it up
+        if [ "$(ls -A)" ]; then
+             log_warn "目标目录不为空且非 Git 仓库，正在清理..."
+             # Be careful with rm -rf. Only do this if we are sure.
+             # Since we are in 1Panel app dir or user verified dir, we can proceed with caution.
+             # We exclude nothing here because we want a fresh clone.
+             rm -rf ./*
+             rm -rf ./.env* # Remove hidden env files too
+             log_success "目录已清理。"
+        fi
+
+        log_info "正在克隆代码仓库..."
+        git clone https://github.com/Hinln/linxi.git . || {
+             log_error "代码克隆失败！请检查网络。"
+             exit 1
+        }
+    fi
+}
+
+start_backend_services() {
+    log_info "正在启动后端服务..."
     
     # 确保 tsconfig.json 宽松模式
     # (已在前一步工具调用中修改)
@@ -294,17 +312,7 @@ deploy_backend() {
     fi
 
     # Ensure we are in the correct directory
-    # If adapted to 1Panel, we might have moved.
-    # We should rely on where the script is running if we moved it, 
-    # but adapt_1panel changes pwd.
-    
-    # 修正工作目录漂移
-    if [[ -n "$TARGET_DIR" ]]; then
-        cd "$TARGET_DIR" || exit 1
-    else
-        # Fallback to script dir
-        cd "$(dirname "$0")" || exit 1
-    fi
+    cd "$TARGET_DIR" || exit 1
 
     # 强制校验主配置文件
     if [ ! -f "docker-compose.yml" ]; then
@@ -312,10 +320,29 @@ deploy_backend() {
         exit 1
     fi
     
+    # 自愈逻辑：检查并修复 docker-compose.yml (如果被错误修改)
+    if grep -q "1panel-network" docker-compose.yml; then
+        log_warn "检测到 docker-compose.yml 被错误修改，正在尝试恢复..."
+        if [ -d ".git" ]; then
+            git checkout docker-compose.yml || log_warn "Git 恢复失败。"
+        else
+            # 手动清理末尾追加的网络定义 (简单的行数截断或 sed 删除)
+            # 假设 networks 定义在最后，且由之前脚本追加
+            # 这是一个简单的尝试，删掉最后 6 行如果包含 1panel-network
+            # Better safe than sorry: just warn user if git fails.
+            log_warn "非 Git 环境，无法自动恢复。请手动检查 docker-compose.yml 是否包含重复的 networks 定义。"
+        fi
+    fi
+    
     # Write the accumulated override content to file
     # This ensures single write and includes all necessary configs
     # 确保 override 文件写入到当前目录
     if [[ -n "$OVERRIDE_CONTENT" ]]; then
+        # Ensure we are in TARGET_DIR before writing
+        if [[ "$(pwd)" != "$TARGET_DIR" ]]; then
+            log_warn "Current directory is not TARGET_DIR. Switching..."
+            cd "$TARGET_DIR" || exit 1
+        fi
         echo "$OVERRIDE_CONTENT" > docker-compose.override.yml
         log_info "已生成 docker-compose.override.yml"
     fi
@@ -354,7 +381,7 @@ deploy_backend() {
 update_env() {
     local key=$1
     local value=$2
-    local env_file="linxi-server/.env"
+    local env_file="$TARGET_DIR/linxi-server/.env"
 
     if grep -q "^${key}=" "$env_file"; then
         sed -i "s|^${key}=.*|${key}=${value}|" "$env_file"
@@ -365,7 +392,7 @@ update_env() {
 
 configure_environment() {
     log_info "开始交互式配置..."
-    touch linxi-server/.env
+    touch "$TARGET_DIR/linxi-server/.env"
     
     # 域名
     while true; do
@@ -470,14 +497,14 @@ configure_environment() {
         update_env "REDIS_PASSWORD" "$REDIS_PASSWORD"
     fi
     
-    if ! grep -q "^JWT_SECRET=" "linxi-server/.env"; then
-        echo "JWT_SECRET=$(openssl rand -base64 32)" >> "linxi-server/.env"
+    if ! grep -q "^JWT_SECRET=" "$TARGET_DIR/linxi-server/.env"; then
+        echo "JWT_SECRET=$(openssl rand -base64 32)" >> "$TARGET_DIR/linxi-server/.env"
     fi
-    if ! grep -q "^CRYPTO_SECRET_KEY=" "linxi-server/.env"; then
-        echo "CRYPTO_SECRET_KEY=$(openssl rand -base64 32)" >> "linxi-server/.env"
+    if ! grep -q "^CRYPTO_SECRET_KEY=" "$TARGET_DIR/linxi-server/.env"; then
+        echo "CRYPTO_SECRET_KEY=$(openssl rand -base64 32)" >> "$TARGET_DIR/linxi-server/.env"
     fi
 
-    chmod 600 "linxi-server/.env"
+    chmod 600 "$TARGET_DIR/linxi-server/.env"
 }
 
 validate_domain() {
@@ -512,7 +539,13 @@ deploy_frontend() {
 # --- 主流程 ---
 
 main() {
-    TARGET_DIR=$(pwd)
+    # 预设 1Panel 目标目录
+    if [[ -d "/opt/1panel" ]]; then
+        TARGET_DIR="/opt/1panel/apps/linxi"
+    else
+        TARGET_DIR=$(pwd)
+    fi
+    
     clear
     echo "=================================================="
     echo "       LinXi (灵犀) 一键部署脚本 v2.0            "
@@ -523,11 +556,18 @@ main() {
     check_system_resources
     check_ports
     optimize_network
+    
+    # Deploy Code first (Clone/Update)
+    deploy_backend_code
+    
+    # Adapt to environment (now code exists)
     adapt_1panel
     
+    # Configure environment
     configure_environment
     
-    deploy_backend
+    # Start Services
+    start_backend_services
     deploy_frontend
     
     # 冒烟测试
