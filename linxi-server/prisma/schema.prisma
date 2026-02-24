@@ -1,0 +1,173 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum VerificationStatus {
+  UNVERIFIED // 未认证
+  PENDING    // 认证中
+  VERIFIED   // 已认证
+}
+
+model User {
+  id           Int                @id @default(autoincrement())
+  phone        String             @unique
+  verifyStatus VerificationStatus @default(UNVERIFIED)
+  goldBalance  Decimal            @default(0) @db.Decimal(18, 2)
+  realName     String?            // Encrypted storage suggested
+  idCardNumber String?            // Encrypted ID Card Number
+  certifyId    String?            // Aliyun Real Person Auth CertifyId
+  nickname     String?            // Anonymous nickname
+  avatarUrl    String?            // Anonymous avatar URL
+  lastLoginIp  String?
+  role         Role               @default(USER)
+  status       UserStatus         @default(NORMAL)
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  
+  posts        Post[]
+  reportsFiled Report[]           @relation("Reporter")
+  auditLogs    AuditLog[]
+  transactions CoinTransaction[]
+  
+  sentMessages     Message[]      @relation("SentMessages")
+  receivedMessages Message[]      @relation("ReceivedMessages")
+  conversationsAsUser1 Conversation[] @relation("User1Conversations")
+  conversationsAsUser2 Conversation[] @relation("User2Conversations")
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  NORMAL
+  BANNED
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  adminId   Int
+  admin     User     @relation(fields: [adminId], references: [id])
+  action    String
+  target    String   // e.g. "Report:123" or "User:456"
+  details   String?
+  createdAt DateTime @default(now())
+}
+
+model Post {
+  id          Int      @id @default(autoincrement())
+  publisherId Int
+  publisher   User     @relation(fields: [publisherId], references: [id])
+  content     String
+  media       Json?    // Image/Video list (JSON or Array)
+  latitude    Float?
+  longitude   Float?
+  isDeleted   Boolean  @default(false) // Logical delete
+  reportCount Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum ContentType {
+  POST
+  USER
+  COMMENT
+}
+
+enum ReportStatus {
+  PENDING  // 待处理
+  ACCEPTED // 已采纳
+  REJECTED // 已驳回
+}
+
+model Report {
+  id             Int          @id @default(autoincrement())
+  reporterId     Int
+  reporter       User         @relation("Reporter", fields: [reporterId], references: [id])
+  contentType    ContentType
+  contentId      Int
+  reason         String
+  evidenceImages Json?        // Evidence images
+  status         ReportStatus @default(PENDING)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+enum TransactionType {
+  RECHARGE
+  CONSUME
+  TIP
+  SYSTEM_GIFT
+}
+
+enum TransactionStatus {
+  PENDING
+  COMPLETED
+  CANCELLED
+}
+
+model CoinTransaction {
+  id          Int               @id @default(autoincrement())
+  userId      Int
+  user        User              @relation(fields: [userId], references: [id])
+  amount      Decimal           @db.Decimal(18, 2)
+  type        TransactionType
+  status      TransactionStatus @default(PENDING)
+  outTradeNo  String?           @unique
+  remark      String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  SYSTEM
+}
+
+model Message {
+  id             Int          @id @default(autoincrement())
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  senderId       Int
+  sender         User         @relation("SentMessages", fields: [senderId], references: [id])
+  receiverId     Int
+  receiver       User         @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  content        String
+  type           MessageType  @default(TEXT)
+  isRead         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+  
+  conversationLast Conversation? @relation("LastMessage")
+}
+
+model Conversation {
+  id        Int       @id @default(autoincrement())
+  user1Id   Int
+  user1     User      @relation("User1Conversations", fields: [user1Id], references: [id])
+  user2Id   Int
+  user2     User      @relation("User2Conversations", fields: [user2Id], references: [id])
+  lastMessageId Int?  @unique
+  lastMessage   Message? @relation("LastMessage", fields: [lastMessageId], references: [id])
+  lastMessageContent String?
+  lastMessageTime    DateTime @default(now())
+  unreadCount1       Int      @default(0) // Unread for user1
+  unreadCount2       Int      @default(0) // Unread for user2
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  
+  messages           Message[]
+  
+  @@unique([user1Id, user2Id])
+}

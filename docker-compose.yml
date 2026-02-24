@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: ./linxi-server
+      dockerfile: Dockerfile
+    container_name: linxi-backend
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - linxi-network
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: linxi-postgres
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: linxi_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - linxi-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: linxi-redis
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    networks:
+      - linxi-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  linxi-network:
+    driver: bridge

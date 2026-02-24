@@ -1,0 +1,35 @@
+# 依赖
+node_modules/
+.pnp
+.pnp.js
+
+# 构建产物
+dist/
+build/
+*.pyc
+
+# 环境配置文件 (极其重要！严禁上传)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.bak
+
+# 数据库与日志
+prisma/migrations/
+*.log
+npm-debug.log*
+
+# Flutter 相关
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+ios/Flutter/Generated.xcconfig
+android/key.properties
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
