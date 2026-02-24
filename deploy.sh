@@ -349,6 +349,7 @@ start_backend_services() {
 
     log_info "构建并启动容器 (使用 $DOCKER_COM_CMD)..."
     # 显式指定文件进行启动，强制同时读取
+    # 关键修改：只启动 app 服务，避免拉起被禁用的数据库
     if [[ -f "docker-compose.override.yml" ]]; then
         if ! $DOCKER_COM_CMD -f docker-compose.yml -f docker-compose.override.yml up --build -d app; then
              log_error "容器启动失败。正在打印配置以供调试..."
@@ -567,6 +568,9 @@ main() {
     configure_environment
     
     # Start Services
+    # 只启动 app 服务 (以及它实际依赖的服务，如果未被禁用)
+    # 如果 Override 中注入了 depends_on: []，那么 app 就会独立启动
+    # 如果没有 Override，那么 app 会拉起 postgres 和 redis
     start_backend_services
     deploy_frontend
     
