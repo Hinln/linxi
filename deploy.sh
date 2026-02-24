@@ -302,6 +302,11 @@ deploy_backend_code() {
              exit 1
         }
     fi
+    
+    # 清理旧的 node_modules 缓存，防止 Cannot find native binding 问题
+    log_info "清理旧的构建缓存..."
+    rm -rf linxi-server/node_modules linxi-server/dist linxi-server/package-lock.json
+    rm -rf linxi-admin/node_modules linxi-admin/dist linxi-admin/package-lock.json
 }
 
 start_backend_services() {
@@ -531,20 +536,28 @@ validate_domain() {
 # --- 6. 前端构建 ---
 
 deploy_frontend() {
-    log_info "正在构建前端..."
+    log_info "正在构建前端 (使用 Docker)..."
     cd linxi-admin || exit 1
     
-    npm install
-    
-    if [[ "$API_DOMAIN" != */v1 ]]; then
-        export VITE_API_BASE_URL="${API_DOMAIN}/v1"
+    # 使用 Docker 进行构建，解决 Node 版本不兼容问题
+    if docker build -t linxi-admin .; then
+        log_success "前端镜像构建成功。"
+        
+        # 提取 dist 产物到本地 (用于 1Panel 静态网站托管)
+        # 创建一个临时容器
+        local container_id=$(docker create linxi-admin)
+        # 拷贝 dist
+        rm -rf dist
+        docker cp $container_id:/usr/share/nginx/html ./dist
+        # 删除临时容器
+        docker rm $container_id
+        
+        log_success "前端产物已提取至: $(pwd)/dist"
     else
-        export VITE_API_BASE_URL="$API_DOMAIN"
+        log_error "前端构建失败，请检查 Docker 日志。"
+        exit 1
     fi
     
-    npm run build
-    
-    log_success "前端构建完成: $(pwd)/dist"
     cd ..
 }
 
