@@ -8,12 +8,12 @@ export class WalletController {
   constructor(private readonly walletService: WalletService) {}
 
   @Get('balance')
-  async getBalance(@Request() req) {
+  async getBalance(@Request() req: any) {
     return this.walletService.getBalance(req.user.userId);
   }
 
   @Post('recharge')
-  async createRechargeOrder(@Request() req, @Body() rechargeDto: RechargeDto) {
+  async createRechargeOrder(@Request() req: any, @Body() rechargeDto: RechargeDto) {
     return this.walletService.createRechargeOrder(req.user.userId, rechargeDto);
   }
 

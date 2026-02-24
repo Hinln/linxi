@@ -20,7 +20,7 @@ export class AdminController {
 
   @Patch('reports/:id/process')
   async processReport(
-    @Request() req,
+    @Request() req: any,
     @Param('id') id: string,
     @Body() processReportDto: ProcessReportDto,
   ) {

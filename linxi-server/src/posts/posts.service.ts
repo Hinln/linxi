@@ -53,7 +53,7 @@ export class PostsService {
     const { limit, cursor } = paginationDto;
 
     const posts = await this.prisma.post.findMany({
-      take: limit,
+      take: Number(limit), // Ensure limit is number
       skip: cursor ? 1 : 0,
       cursor: cursor ? { createdAt: new Date(cursor) } : undefined,
       orderBy: { createdAt: 'desc' },

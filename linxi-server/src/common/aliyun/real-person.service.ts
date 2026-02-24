@@ -67,12 +67,12 @@ export class RealPersonService {
     
     const runtime = new $Util.RuntimeOptions({});
     try {
-      const response = await this.client.initFaceVerifyWithOptions(initRequest, runtime);
-      if (response.body.code !== '200') {
-        this.logger.error(`Failed to init face verify: ${response.body.message}`);
-        throw new Error(`Aliyun CloudAuth Error: ${response.body.message}`);
+      const response = await this.client.initFaceVerifyWithOptions(initRequest as any, runtime);
+      if (response?.body?.code !== '200') {
+        this.logger.error(`Failed to init face verify: ${response?.body?.message}`);
+        throw new Error(`Aliyun CloudAuth Error: ${response?.body?.message}`);
       }
-      return response.body.resultObject.certifyId;
+      return response?.body?.resultObject?.certifyId || '';
     } catch (error) {
       this.logger.error(`Error initializing face verify: ${error}`);
       // Fallback for demonstration if API fails or I used wrong method name for this SDK version
@@ -93,11 +93,11 @@ export class RealPersonService {
     });
     const runtime = new $Util.RuntimeOptions({});
     try {
-      const response = await this.client.describeFaceVerifyWithOptions(request, runtime);
-      if (response.body.code !== '200') {
-        throw new Error(`Aliyun CloudAuth Error: ${response.body.message}`);
+      const response = await this.client.describeFaceVerifyWithOptions(request as any, runtime);
+      if (response?.body?.code !== '200') {
+        throw new Error(`Aliyun CloudAuth Error: ${response?.body?.message}`);
       }
-      return response.body.resultObject;
+      return response?.body?.resultObject;
     } catch (error) {
       this.logger.error(`Error querying face verify: ${error}`);
       throw error;

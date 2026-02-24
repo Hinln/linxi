@@ -1,13 +1,13 @@
 import { Injectable, UnauthorizedException, ConflictException, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { PrismaService } from '../../prisma/prisma.service';
-import { SmsService } from '../../common/aliyun/sms.service';
-import { RealPersonService } from '../../common/aliyun/real-person.service';
-import { RedisService } from '../../common/redis/redis.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { SmsService } from '../common/aliyun/sms.service';
+import { RealPersonService } from '../common/aliyun/real-person.service';
+import { RedisService } from '../common/redis/redis.service';
 import { LoginDto } from './dto/login.dto';
-import { RandomProfileUtil } from '../../common/utils/random-profile.util';
-import { CryptoUtil } from '../../common/utils/crypto.util';
-import { VerificationStatus } from '@prisma/client';
+import { RandomProfileUtil } from '../common/utils/random-profile.util';
+import { CryptoUtil } from '../common/utils/crypto.util';
+import { VerificationStatus, User } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -31,7 +31,7 @@ export class AuthService {
     }
 
     // 2. Check or Create User
-    let user = await this.prisma.user.findUnique({
+    let user: User | null = await this.prisma.user.findUnique({
       where: { phone: phoneNumber },
     });
 
@@ -48,7 +48,7 @@ export class AuthService {
             verifyStatus: VerificationStatus.UNVERIFIED,
           },
         });
-      } catch (error) {
+      } catch (error: any) {
         if (error.code === 'P2002') {
           user = await this.prisma.user.findUnique({
             where: { phone: phoneNumber },
@@ -59,8 +59,12 @@ export class AuthService {
       }
     }
 
+    if (!user) {
+       throw new Error('User creation failed');
+    }
+
     // 3. Generate JWT
-    const payload = { sub: user.id, phoneNumber: user.phone, role: user.role };
+    const payload = { sub: user.id, phoneNumber: user.phone, role: user.role, userId: user.id };
     const accessToken = this.jwtService.sign(payload);
 
     return {
@@ -105,7 +109,7 @@ export class AuthService {
     // In development, just log the code if SMS fails or env not set
     try {
       await this.smsService.sendSms(phoneNumber, signName, templateCode, JSON.stringify({ code }));
-    } catch (e) {
+    } catch (e: any) {
       this.logger.error(`Failed to send SMS to ${phoneNumber}: ${e.message}`);
       // In production, you might want to throw error here. 
       // For dev, we might allow it to pass so we can see the code in Redis/Logs if we want.

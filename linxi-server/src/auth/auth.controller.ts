@@ -22,12 +22,12 @@ export class AuthController {
   }
 
   @Post('real-name/initialize')
-  async initializeRealName(@Request() req) {
+  async initializeRealName(@Request() req: any) {
     return this.authService.initializeRealPersonAuth(req.user.userId);
   }
 
   @Post('real-name/query')
-  async queryRealName(@Request() req, @Body() body: QueryRealPersonDto) {
+  async queryRealName(@Request() req: any, @Body() body: QueryRealPersonDto) {
     return this.authService.queryRealPersonAuth(req.user.userId, body.certifyId);
   }
 }

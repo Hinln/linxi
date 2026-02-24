@@ -9,7 +9,7 @@ export class CommentsController {
 
   @UseGuards(JwtAuthGuard)
   @Post()
-  create(@Request() req, @Body() createCommentDto: CreateCommentDto) {
+  create(@Request() req: any, @Body() createCommentDto: CreateCommentDto) {
     return this.commentsService.create(req.user.userId, createCommentDto);
   }
 

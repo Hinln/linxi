@@ -16,4 +16,8 @@ export class CreatePostDto {
   @IsLongitude()
   @IsOptional()
   longitude: number;
+
+  @IsString()
+  @IsOptional()
+  address?: string;
 }
