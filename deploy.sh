@@ -100,11 +100,11 @@ check_ports() {
 
                     # 禁用对应服务 - Accumulate to variable with proper newlines
                     if [[ "$port" == "5432" ]]; then
-                        OVERRIDE_CONTENT+=$'\n  postgres: { profiles: [\'donotstart\'] }'
+                        OVERRIDE_CONTENT+=$'\n  postgres:\n    profiles: [\'donotstart\']\n    ports: []'
                         log_success "已禁用内置 Postgres 容器。"
                     fi
                     if [[ "$port" == "6379" ]]; then
-                        OVERRIDE_CONTENT+=$'\n  redis: { profiles: [\'donotstart\'] }'
+                        OVERRIDE_CONTENT+=$'\n  redis:\n    profiles: [\'donotstart\']\n    ports: []'
                         log_success "已禁用内置 Redis 容器。"
                     fi
                     
@@ -350,13 +350,13 @@ start_backend_services() {
     log_info "构建并启动容器 (使用 $DOCKER_COM_CMD)..."
     # 显式指定文件进行启动，强制同时读取
     if [[ -f "docker-compose.override.yml" ]]; then
-        if ! $DOCKER_COM_CMD -f docker-compose.yml -f docker-compose.override.yml up --build -d; then
+        if ! $DOCKER_COM_CMD -f docker-compose.yml -f docker-compose.override.yml up --build -d app; then
              log_error "容器启动失败。正在打印配置以供调试..."
              $DOCKER_COM_CMD config
              exit 1
         fi
     else
-        if ! $DOCKER_COM_CMD up --build -d; then
+        if ! $DOCKER_COM_CMD up --build -d app; then
              log_error "容器启动失败。"
              exit 1
         fi

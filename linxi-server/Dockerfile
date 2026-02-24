@@ -25,10 +25,14 @@ FROM node:20-alpine
 
 WORKDIR /app
 
+# Ensure we have all dependencies (including production deps)
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
+
+# Add this to verify dist exists during build
+RUN ls -R ./dist
 
 # Expose the port the app runs on
 EXPOSE 3000
