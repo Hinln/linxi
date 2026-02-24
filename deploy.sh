@@ -147,8 +147,8 @@ check_domain_resolution() {
         log_error "域名 $host 解析未生效！"
         log_error "当前解析 IP: ${resolved_ip:-未解析}"
         log_error "服务器 IP: $current_ip"
-        log_warn "请立即去域名后台修改解析，否则 SSL 申请必失败！"
-        read -p "是否已修复并继续? (y/n): " RESOLVED </dev/tty
+        log_warn "请立即去域名后台修改解析，稍后请在 1Panel 面板中自行申请 SSL 证书。"
+        read -p "是否已知晓并继续? (y/n): " RESOLVED </dev/tty
         if [[ "$RESOLVED" != "y" ]]; then exit 1; fi
     else
         log_success "域名解析验证通过。"
