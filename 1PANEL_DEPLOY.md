@@ -1,6 +1,8 @@
-# 灵犀 (LinXi) - 1Panel 部署指南
+# 灵犀 (LinXi) - 1Panel 部署指南 (v2.0)
 
 本文档将指导您如何使用 **1Panel** 面板快速部署灵犀 (LinXi) 全栈项目。我们将利用 1Panel 的容器编排（Docker Compose）和网站管理（OpenResty/Nginx）功能。
+
+> **注意**: 本项目已提供一键部署脚本 `deploy.sh`，可自动完成大部分配置。
 
 ---
 
@@ -8,173 +10,97 @@
 
 1.  **服务器要求**：
     *   操作系统：Ubuntu 20.04+ / CentOS 7+
-    *   内存：建议 4GB 以上
+    *   内存：建议 4GB 以上 (若不足会自动创建 Swap)
     *   已安装 1Panel 面板。
 2.  **环境依赖 (通过 1Panel 应用商店安装)**：
     *   **OpenResty** (用于反向代理)
-    *   **PostgreSQL** (数据库)
-    *   **Redis** (缓存)
+    *   **PostgreSQL** (数据库，可选，脚本默认使用 Docker 内部数据库，也可连接面板数据库)
+    *   **Redis** (缓存，可选，同上)
 3.  **域名**：
     *   准备两个子域名，分别用于后端 API (例如 `api.example.com`) 和管理后台 (例如 `admin.example.com`)。
     *   确保域名已解析到服务器 IP。
 
 ---
 
-## 📦 第一步：获取代码与构建镜像
+## 🚀 快速部署 (推荐)
 
-1.  **上传代码**：
-    *   登录 1Panel 面板，进入 **文件** 管理。
-    *   在 `/opt/1panel/apps` 目录下（或您喜欢的任意目录）新建文件夹 `linxi`。
-    *   将项目源码上传并解压到该目录。
+我们提供了一个全自动部署脚本，支持环境检查、依赖安装、代码拉取、配置生成和容器启动。
 
-2.  **构建后端镜像 (推荐本地构建)**：
-    *   由于服务器性能可能有限，建议在本地开发机构建 Docker 镜像并推送至阿里云/腾讯云镜像仓库，或者 Docker Hub。
-    *   在本地项目根目录运行：
-        ```bash
-        # 登录 Docker Hub (如果需要)
-        docker login
+### 1. 运行一键脚本
+1.  登录服务器 SSH (或使用 1Panel 终端)。
+2.  执行以下命令 (自动下载并运行)：
+    ```bash
+    curl -sSL https://raw.githubusercontent.com/Hinln/linxi/main/deploy.sh | sudo bash
+    ```
+    *(或者手动上传 `deploy.sh` 并运行 `chmod +x deploy.sh && ./deploy.sh`)*
 
-        # 构建并推送
-        docker build -t your-docker-id/linxi-server:latest -f linxi-server/Dockerfile ./linxi-server
-        docker push your-docker-id/linxi-server:latest
-        ```
-    *   *如果您必须在服务器构建*：请确保服务器已安装 Docker 环境，并在服务器终端运行上述 `docker build` 命令。
+### 2. 脚本交互流程
+脚本运行过程中会引导您进行以下配置：
+*   **环境检查**: 自动检测内存、端口占用、Docker 环境。
+*   **代码获取**: 自动从 Git 仓库拉取最新代码。
+*   **域名配置**: 输入您的 API 域名和管理后台域名，脚本会自动验证解析。
+*   **阿里云配置**: 输入 AccessKey、OSS Bucket、短信模板等信息。
+*   **数据库/Redis**: 
+    *   默认使用 Docker 内部容器 (无需额外操作)。
+    *   如果检测到端口冲突或 1Panel 服务，脚本会询问是否复用面板的 PostgreSQL/Redis，并自动注入连接信息。
 
----
-
-## 🗄 第二步：配置数据库与 Redis
-
-1.  **创建数据库**：
-    *   在 1Panel **数据库** -> **PostgreSQL** 中，点击“创建数据库”。
-    *   名称：`linxi_db`
-    *   用户：`linxi_user`
-    *   密码：(请设置一个强密码，并记住它)
-    *   *注意：请确保 PostgreSQL 允许容器网络访问，或者直接使用 Docker 内部网络连接。*
-
-2.  **Redis**：
-    *   确保 Redis 服务已启动，记下连接密码。
+### 3. 部署完成
+脚本执行完毕后，会输出：
+*   后端 API 地址
+*   管理后台地址
+*   前端静态资源路径 (通常在 `linxi-admin/dist`)
 
 ---
 
-## 🐳 第三步：创建容器编排 (Docker Compose)
+## 🔧 常见问题与维护
 
-1.  进入 1Panel **容器** -> **编排** -> **创建编排**。
-2.  **名称**：`linxi`
-3.  **内容**：复制以下内容，并根据您的实际情况修改环境变量。
+### 1. 代码更新与重新部署
+如果您修改了本地代码 (例如修复了 bug)，请按以下步骤更新服务器：
 
-```yaml
-version: '3.8'
+1.  **上传文件**: 将修改后的文件 (如 `src/common/aliyun/oss.service.ts`) 上传到服务器对应目录覆盖。
+2.  **重新构建**:
+    ```bash
+    # 进入项目目录
+    cd /opt/1panel/apps/linxi
 
-services:
-  # 后端服务
-  linxi-server:
-    image: your-docker-id/linxi-server:latest # 替换为您构建的镜像地址
-    container_name: linxi-server
-    restart: always
-    ports:
-      - "3000:3000"
-    environment:
-      # 数据库配置 (如果使用 1Panel 部署的 PG，host 可以是宿主机 IP 或者 link 名称)
-      # 格式: postgresql://用户:密码@主机:端口/数据库名?schema=public
-      - DATABASE_URL=postgresql://linxi_user:your_db_password@172.17.0.1:5432/linxi_db?schema=public
-      
-      # Redis 配置
-      - REDIS_HOST=172.17.0.1 # 宿主机 Docker 网关 IP
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=your_redis_password
-      
-      # 阿里云配置
-      - ALIYUN_ACCESS_KEY_ID=your_ak
-      - ALIYUN_ACCESS_KEY_SECRET=your_sk
-      - ALIYUN_OSS_BUCKET=your_bucket
-      - ALIYUN_OSS_REGION=oss-cn-hangzhou
-      - ALIYUN_SMS_SIGN_NAME=LinXi
-      - ALIYUN_SMS_TEMPLATE_CODE=SMS_123456789
-      - ALIYUN_REAL_PERSON_SCENE_ID=100000
-      
-      # JWT 密钥
-      - JWT_SECRET=generate_a_long_random_secret_string
-      - CRYPTO_SECRET_KEY=generate_another_secret_for_aes
+    # 重建并重启后端容器
+    docker compose up --build -d app
+    ```
+    > **注意**: 必须加上 `--build` 参数，否则容器不会应用代码变更。
 
-    networks:
-      - 1panel-network
-
-networks:
-  1panel-network:
-    external: true
+### 2. 数据库迁移
+如果更新代码包含数据库变更 (Prisma Schema)，请执行：
+```bash
+docker compose run --rm app npx prisma migrate deploy
 ```
 
-*注意：`172.17.0.1` 通常是 Docker 容器访问宿主机的 IP。如果您的 PostgreSQL 和 Redis 也是容器化部署且在同一个网络下，可以使用服务名。*
-
-4.  点击 **确认**，等待容器启动成功。
-
----
-
-## ⚙️ 第四步：数据库迁移
-
-容器启动后，首次运行需要初始化数据库表结构。
-
-1.  在 1Panel **容器** 列表中，找到 `linxi-server` 容器。
-2.  点击右侧的 **终端** 图标，进入容器命令行。
-3.  执行以下命令：
-    ```bash
-    npx prisma migrate deploy
-    ```
-    看到 "The migrations have been successfully applied" 即表示成功。
-
----
-
-## 🌐 第五步：部署前端 (管理后台)
-
-1.  **本地构建前端**：
-    *   在本地修改 `linxi-admin/.env` (或构建时指定环境变量)，将 `VITE_API_BASE_URL` 指向您的后端域名 `https://api.example.com/v1`。
-    *   运行构建命令：
-        ```bash
-        cd linxi-admin
-        npm install
-        npm run build
-        ```
-    *   这将生成一个 `dist` 文件夹。
-
-2.  **上传静态文件**：
-    *   将 `dist` 文件夹内的所有文件，上传到服务器的 `/opt/1panel/apps/openresty/www/sites/admin.example.com/index` (路径取决于您下一步创建网站时的设置，建议先创建网站再上传)。
-
-3.  **创建静态网站**：
-    *   进入 1Panel **网站** -> **创建网站** -> **静态网站**。
-    *   **主域名**：`admin.example.com`
-    *   **代号**：`linxi-admin`
-    *   创建完成后，进入该网站的根目录，将刚才的 `dist` 文件内容覆盖上传进去。
-
----
-
-## 🔄 第六步：配置反向代理 (Nginx)
-
-我们需要配置两个网站：一个是刚才创建的管理后台（静态），一个是后端 API（反代）。
-
-### 1. 后端 API 反向代理
-1.  **创建反代网站**：
-    *   1Panel **网站** -> **创建网站** -> **反向代理**。
-    *   **主域名**：`api.example.com`
-    *   **代理地址**：`http://127.0.0.1:3000` (指向 linxi-server 容器映射的端口)。
-2.  **配置 SSL**：
-    *   在网站设置中，开启 HTTPS，申请 Let's Encrypt 免费证书。
-
-### 2. 管理后台 Nginx 修正
-1.  找到 `admin.example.com` 静态网站，点击 **配置** -> **配置文件**。
-2.  确保 `location /` 块包含以下内容，以支持 React 路由的 History 模式（防止刷新 404）：
+### 3. 前端部署 (静态网站)
+脚本会自动构建前端并生成 `dist` 目录。您需要在 1Panel 中：
+1.  **创建静态网站**: 域名填写您配置的后台域名 (如 `admin.example.com`)。
+2.  **上传文件**: 将 `linxi-admin/dist` 目录下的所有文件复制到该网站的运行目录。
+3.  **配置 Nginx**: 在网站配置中添加伪静态规则以支持 History 模式：
     ```nginx
     location / {
         try_files $uri $uri/ /index.html;
-        index index.html;
     }
     ```
-3.  同样开启 HTTPS。
+
+### 4. 阿里云 OSS 报错 "region must be conform to the specifications"
+这是因为配置的 Region 格式不正确 (例如带了 `oss-` 前缀或 `.aliyuncs.com` 后缀)。
+*   **解决方案**: 最新版代码已自动处理此问题。请确保同步了 `oss.service.ts` 的最新修复，并执行 `docker compose up --build -d app`。
 
 ---
 
-## ✅ 第七步：验证与完成
+## 📂 目录结构说明
 
-1.  访问 `https://api.example.com/v1`，如果看到 404 或后端返回的提示，说明后端部署成功。
-2.  访问 `https://admin.example.com`，应该能看到登录界面。尝试登录（需先在数据库手动插入一个管理员账号，或通过注册接口创建）。
-
-**恭喜！您已成功在 1Panel 上部署了灵犀全栈项目。**
+```
+/opt/1panel/apps/linxi/
+├── deploy.sh              # 一键部署脚本
+├── docker-compose.yml     # 容器编排文件
+├── linxi-server/          # 后端源码
+│   ├── src/
+│   ├── Dockerfile
+│   └── .env               # 后端环境变量 (由脚本自动生成)
+└── linxi-admin/           # 前端源码
+    └── dist/              # 前端构建产物 (静态文件)
+```

@@ -68,6 +68,7 @@ LinXi/
 │
 ├── deploy.sh           # 自动化一键部署脚本 (Shell)
 ├── docker-compose.yml  # Docker 编排文件 (后端 + 数据库 + Redis)
+├── 1PANEL_DEPLOY.md    # 1Panel 面板部署指南
 ├── LICENSE             # MIT 开源协议
 └── README.md           # 项目说明文档
 ```
@@ -128,14 +129,25 @@ flutter run
 
 ## 📦 部署指南
 
-本项目提供了一键部署脚本 `deploy.sh`，适用于 Ubuntu/CentOS 服务器。
+本项目提供了一键部署脚本 `deploy.sh`，适用于 Ubuntu/CentOS 服务器。同时特别适配了 **1Panel** 面板。
 
+### 1Panel 部署 (推荐)
+详细步骤请参考 [1PANEL_DEPLOY.md](1PANEL_DEPLOY.md)。
+
+**一键安装命令** (推荐)：
+无需手动下载代码，直接在服务器终端执行：
+```bash
+curl -sSL https://raw.githubusercontent.com/Hinln/linxi/main/deploy.sh | sudo bash
+```
+
+**手动安装**：
 1. **上传代码**：将项目代码上传至服务器。
 2. **运行脚本**：
    ```bash
    sudo ./deploy.sh
    ```
 3. **按提示配置**：脚本会引导输入域名、阿里云密钥等信息，并自动完成 Docker 容器构建、数据库迁移和 Nginx 配置。
+4. **前端托管**：脚本运行结束后会生成 `linxi-admin/dist`，请将其上传至 1Panel 的静态网站目录。
 
 ## 🤝 贡献指南
 
