@@ -55,17 +55,11 @@ export class PostsService {
     const posts = await this.prisma.post.findMany({
       take: Number(limit), // Ensure limit is number
       skip: cursor ? 1 : 0,
-      cursor: cursor ? { createdAt: new Date(cursor) } : undefined,
+      cursor: cursor ? { id: Number(cursor) } : undefined, // Cursor must point to unique field (ID)
       orderBy: { createdAt: 'desc' },
       where: { isDeleted: false },
       include: {
-        publisher: {
-          select: {
-            nickname: true,
-            avatarUrl: true,
-            verifyStatus: true,
-          },
-        },
+        publisher: true, // Include full publisher relation
         _count: {
           select: {
             comments: true,
