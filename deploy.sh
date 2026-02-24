@@ -160,6 +160,10 @@ check_domain_resolution() {
 optimize_network() {
     log_info "正在检测网络环境..."
     
+    # 临时切换到安全目录执行 global npm config
+    local original_dir=$(pwd)
+    cd /tmp || true
+    
     # 通过访问 google.com 的延迟判断
     if curl -s --connect-timeout 3 --head https://www.google.com | grep "200 OK" > /dev/null; then
         log_info "网络环境: 国际互联 (无需加速)"
@@ -173,6 +177,9 @@ optimize_network() {
         # Docker 加速 (仅提示，不强制覆盖 daemon.json 以免破坏现有配置)
         log_info "建议手动配置 Docker 镜像加速 (如阿里云/腾讯云镜像源)"
     fi
+    
+    # 切回原目录
+    cd "$original_dir" || true
 }
 
 # --- 3. 深度适配 1Panel (1Panel Bridge) ---
@@ -281,16 +288,13 @@ deploy_backend_code() {
         log_info "检测到 Git 仓库，正在更新代码..."
         git pull origin main || log_warn "Git 更新失败，将使用当前代码继续。"
     else
-        # If not a git repo but has content (and no .git), clean it up
-        if [ "$(ls -A)" ]; then
-             log_warn "目标目录不为空且非 Git 仓库，正在清理..."
-             # Be careful with rm -rf. Only do this if we are sure.
-             # Since we are in 1Panel app dir or user verified dir, we can proceed with caution.
-             # We exclude nothing here because we want a fresh clone.
-             rm -rf ./*
-             rm -rf ./.env* # Remove hidden env files too
-             log_success "目录已清理。"
-        fi
+    if [ ! -d ".git" ] && [ "$(ls -A | grep -v "deploy.sh" | grep -v "linxi-server" | grep -v "linxi-admin")" ]; then
+         log_warn "当前目录不为空且非 Git 仓库，可能导致文件冲突。"
+         log_info "正在清理冲突文件 (保留 deploy.sh)..."
+         # Remove everything except deploy.sh
+         find . -maxdepth 1 ! -name 'deploy.sh' ! -name '.' ! -name '..' -exec rm -rf {} +
+         log_success "清理完成。"
+    fi
 
         log_info "正在克隆代码仓库..."
         git clone https://github.com/Hinln/linxi.git . || {
