@@ -138,7 +138,9 @@ export class AuthService {
     // Call Aliyun
     let certifyId: string;
     try {
-      certifyId = await this.realPersonService.describeSmartVerify(outerOrderNo, sceneId);
+      // Pass empty metaInfo for now, or get it from request if possible
+      const metaInfo = '{}'; 
+      certifyId = await this.realPersonService.initFaceVerify(outerOrderNo, sceneId, metaInfo);
     } catch (e) {
       // Mock for dev if keys are missing
       this.logger.warn(`Aliyun Init Failed (likely invalid keys). Using Mock CertifyId.`);

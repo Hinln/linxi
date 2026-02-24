@@ -1,9 +1,8 @@
 import { Injectable, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { TransactionType, TransactionStatus } from '@prisma/client';
+import { TransactionType, TransactionStatus, Prisma } from '@prisma/client';
 import { RechargeDto, CallbackDto } from './dto/wallet.dto';
 import * as crypto from 'crypto';
-import { Decimal } from '@prisma/client/runtime/library';
 
 @Injectable()
 export class WalletService {
@@ -47,7 +46,7 @@ export class WalletService {
     const transaction = await this.prisma.coinTransaction.create({
       data: {
         userId,
-        amount: new Decimal(amount),
+        amount: new Prisma.Decimal(amount),
         type: TransactionType.RECHARGE,
         status: TransactionStatus.PENDING,
         outTradeNo,
@@ -139,7 +138,7 @@ export class WalletService {
   async consumeCoins(userId: number, amount: number, type: TransactionType, remark?: string) {
     if (amount <= 0) throw new BadRequestException('Amount must be positive');
     
-    const decimalAmount = new Decimal(amount);
+    const decimalAmount = new Prisma.Decimal(amount);
 
     return await this.prisma.$transaction(async (tx) => {
       // 1. Deduct Balance (Optimistic Locking via WHERE clause)
