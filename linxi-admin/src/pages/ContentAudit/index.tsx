@@ -3,7 +3,7 @@ import { Table, Button, Modal, Tag, Space, Image, message, Input } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import dayjs from 'dayjs';
 import { getReports, processReport, updateUserStatus } from '../../api/admin';
-import { Report } from '../../types/api';
+import type { Report } from '../../types/api';
 
 const { TextArea } = Input;
 

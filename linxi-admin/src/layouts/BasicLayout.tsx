@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layout, Menu, Breadcrumb, Avatar, Dropdown } from 'antd';
+import { Layout, Menu, Avatar, Dropdown } from 'antd';
 import {
   DesktopOutlined,
   UserOutlined,
@@ -43,13 +43,14 @@ const BasicLayout: React.FC = () => {
     navigate('/login');
   };
 
-  const userMenu = (
-    <Menu>
-      <Menu.Item key="logout" icon={<LogoutOutlined />} onClick={handleLogout}>
-        Logout
-      </Menu.Item>
-    </Menu>
-  );
+  const userMenuItems = [
+    {
+      key: 'logout',
+      icon: <LogoutOutlined />,
+      label: 'Logout',
+      onClick: handleLogout,
+    },
+  ];
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
@@ -67,7 +68,7 @@ const BasicLayout: React.FC = () => {
       </Sider>
       <Layout className="site-layout">
         <Header className="site-layout-background p-0 bg-white flex justify-end items-center px-4 shadow">
-          <Dropdown overlay={userMenu} placement="bottomRight">
+          <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
             <div className="cursor-pointer flex items-center gap-2">
               <Avatar icon={<UserOutlined />} />
               <span>Admin</span>

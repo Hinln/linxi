@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, Col, Row, Statistic } from 'antd';
-import { ArrowUpOutlined, ArrowDownOutlined, UserOutlined, PayCircleOutlined, AlertOutlined, RiseOutlined } from '@ant-design/icons';
+import { UserOutlined, PayCircleOutlined, AlertOutlined, RiseOutlined } from '@ant-design/icons';
 
 const Dashboard: React.FC = () => {
   return (

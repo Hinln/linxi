@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Form, Input, Button, Card, message } from 'antd';
-import { UserOutlined, LockOutlined, MobileOutlined } from '@ant-design/icons';
+import { LockOutlined, MobileOutlined } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import * as AuthApi from '../../api/auth';
 
