@@ -14,6 +14,7 @@ async function bootstrap() {
     transform: true,
   }));
   
-  await app.listen(process.env.PORT ?? 3000);
+  // 强制监听 0.0.0.0 以支持 Docker 端口映射
+  await app.listen(process.env.PORT ?? 3000, '0.0.0.0');
 }
 bootstrap();
