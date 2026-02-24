@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../profile/profile_screen.dart';
+import 'home_tab.dart';
+import '../post/create_post_screen.dart';
+import '../chat/contacts_tab.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,9 +15,9 @@ class _HomeScreenState extends State<HomeScreen> {
   int _currentIndex = 0;
 
   final List<Widget> _pages = [
-    const Center(child: Text('Home')),
+    const HomeTab(),
     const Center(child: Text('Nearby')),
-    const Center(child: Text('Contacts')),
+    const ContactsTab(),
     const ProfileScreen(),
   ];
 
@@ -25,6 +28,18 @@ class _HomeScreenState extends State<HomeScreen> {
         index: _currentIndex,
         children: _pages,
       ),
+      floatingActionButton: _currentIndex == 0
+          ? FloatingActionButton(
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CreatePostScreen()),
+                );
+              },
+              backgroundColor: Theme.of(context).primaryColor,
+              child: const Icon(Icons.add, color: Colors.white),
+            )
+          : null,
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
@@ -48,9 +63,9 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Nearby',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.people_outline),
-            activeIcon: Icon(Icons.people),
-            label: 'Contacts',
+            icon: Icon(Icons.chat_bubble_outline),
+            activeIcon: Icon(Icons.chat_bubble),
+            label: 'Messages',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),

@@ -5,6 +5,8 @@ import { ReportPaginationDto } from './dto/report-pagination.dto';
 import { ProcessReportDto } from './dto/process-report.dto';
 import { ReportStatus, ContentType, UserStatus } from '@prisma/client';
 
+import { CryptoUtil } from '../common/utils/crypto.util';
+
 @Injectable()
 export class AdminService {
   constructor(
@@ -33,10 +35,18 @@ export class AdminService {
       if (report.contentType === ContentType.POST) {
         contentDetails = await this.prisma.post.findUnique({ where: { id: report.contentId } });
       } else if (report.contentType === ContentType.USER) {
-        contentDetails = await this.prisma.user.findUnique({
+        const user = await this.prisma.user.findUnique({
           where: { id: report.contentId },
-          select: { id: true, nickname: true, avatarUrl: true, status: true },
+          select: { id: true, nickname: true, avatarUrl: true, status: true, realName: true, idCardNumber: true },
         });
+        
+        if (user) {
+          contentDetails = {
+            ...user,
+            realName: user.realName ? CryptoUtil.decrypt(user.realName) : null,
+            idCardNumber: user.idCardNumber ? CryptoUtil.decrypt(user.idCardNumber) : null,
+          };
+        }
       }
       return { ...report, contentDetails };
     }));

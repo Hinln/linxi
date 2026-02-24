@@ -226,10 +226,36 @@ class _ProfileScreenState extends State<ProfileScreen> {
           if (status == 'unverified')
             TextButton(
               onPressed: () {
-                provider.startRealNameVerification();
+                _showPrivacyDialog(context, provider);
               },
               child: const Text('Go Verify'),
             ),
+        ],
+      ),
+    );
+  }
+
+  void _showPrivacyDialog(BuildContext context, UserProvider provider) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Privacy Notice'),
+        content: const Text(
+          'To comply with relevant regulations and ensure account security, we need to collect your facial biometrics for real-person authentication.\n\n'
+          'This information will only be used for identity verification and will be encrypted during transmission and storage. We strictly protect your privacy.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              provider.startRealNameVerification();
+            },
+            child: const Text('Agree & Continue'),
+          ),
         ],
       ),
     );

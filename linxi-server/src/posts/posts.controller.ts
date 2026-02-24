@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Param, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, Request, UseGuards, Delete } from '@nestjs/common';
 import { PostsService } from './posts.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { PaginationDto } from './dto/pagination.dto';
@@ -6,6 +6,7 @@ import { NearbyDto } from './dto/nearby.dto';
 import { GetPresignedUrlDto } from './dto/get-presigned-url.dto';
 import { ReportPostDto } from './dto/report-post.dto';
 import { Public } from '../auth/public.decorator';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
 @Controller('posts')
 export class PostsController {
@@ -16,6 +17,7 @@ export class PostsController {
     return this.postsService.getPresignedUrl(query.fileName, query.fileType);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post()
   async create(@Request() req, @Body() createPostDto: CreatePostDto) {
     return this.postsService.create(req.user.userId, createPostDto);
@@ -44,5 +46,17 @@ export class PostsController {
     reportDto.targetType = 'POST' as any; // Using enum value actually
 
     return this.postsService.report(req.user.userId, reportDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/like')
+  async like(@Request() req, @Param('id') id: string) {
+    return this.postsService.like(req.user.userId, +id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id/like')
+  async unlike(@Request() req, @Param('id') id: string) {
+    return this.postsService.unlike(req.user.userId, +id);
   }
 }

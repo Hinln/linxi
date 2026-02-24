@@ -30,7 +30,7 @@ export class PostsService {
    * Create Post
    */
   async create(userId: number, createPostDto: CreatePostDto) {
-    const { content, media, latitude, longitude } = createPostDto;
+    const { content, media, latitude, longitude, address } = createPostDto;
 
     const post = await this.prisma.post.create({
       data: {
@@ -39,6 +39,7 @@ export class PostsService {
         media: media ? JSON.stringify(media) : undefined,
         latitude,
         longitude,
+        address,
       },
     });
 
@@ -54,7 +55,7 @@ export class PostsService {
     const posts = await this.prisma.post.findMany({
       take: limit,
       skip: cursor ? 1 : 0,
-      cursor: cursor ? { createdAt: new Date(cursor) } : undefined, // Assuming createdAt is unique enough or use ID
+      cursor: cursor ? { createdAt: new Date(cursor) } : undefined,
       orderBy: { createdAt: 'desc' },
       where: { isDeleted: false },
       include: {
@@ -65,40 +66,48 @@ export class PostsService {
             verifyStatus: true,
           },
         },
+        _count: {
+          select: {
+            comments: true,
+            likes: true,
+          },
+        },
+        likes: currentUserId ? {
+          where: { userId: currentUserId },
+          select: { id: true },
+        } : false,
       },
     });
 
-    // Transform response for anonymous view
     return posts.map((post) => ({
       id: post.id,
       content: post.content,
       media: post.media,
       location: { lat: post.latitude, lng: post.longitude },
+      address: post.address,
       createdAt: post.createdAt,
+      viewCount: post.viewCount,
+      likeCount: post._count.likes,
+      commentCount: post._count.comments,
+      isLiked: post.likes && post.likes.length > 0,
       publisher: {
         nickname: post.publisher.nickname,
         avatarUrl: post.publisher.avatarUrl,
         isVerified: post.publisher.verifyStatus === VerificationStatus.VERIFIED,
       },
-      // Hide comments marker or logic if user not logged in could be handled in frontend
-      // But requirement says "If not logged in, hide comment function marker"
-      // We can add a flag
       allowComment: !!currentUserId,
     }));
   }
 
   /**
    * Get Nearby Posts
-   * Using Haversine formula for distance calculation via Prisma Raw Query
    */
   async getNearby(nearbyDto: NearbyDto, currentUserId?: number) {
     const { latitude, longitude, distance } = nearbyDto;
     
-    // Note: Prisma Raw query requires correct typing and syntax for PostgreSQL.
-    // Ensure table names and column names are quoted if they are case-sensitive or reserved.
-    // In Prisma, models are usually PascalCase ("User", "Post"), fields camelCase ("publisherId").
-    // But PostgreSQL stores them lowercase unless quoted. Prisma quotes them in migrations.
-    // So we use double quotes for identifiers.
+    // Note: This raw query needs to be updated to include like/comment counts if needed for nearby too.
+    // For simplicity, keeping it basic or we'd need a more complex join.
+    // Let's keep the existing implementation but add basic fields mapping if they exist.
 
     const posts: any[] = await this.prisma.$queryRaw`
       SELECT 
@@ -108,6 +117,7 @@ export class PostsService {
         p."createdAt", 
         p.latitude, 
         p.longitude,
+        p.address,
         u.nickname, 
         u."avatarUrl", 
         u."verifyStatus",
@@ -139,6 +149,7 @@ export class PostsService {
       content: post.content,
       media: post.media,
       location: { lat: post.latitude, lng: post.longitude },
+      address: post.address,
       distance: post.distance,
       createdAt: post.createdAt,
       publisher: {
@@ -156,7 +167,6 @@ export class PostsService {
   async report(userId: number, reportPostDto: ReportPostDto) {
     const { targetId, reason } = reportPostDto;
     
-    // 1. Create Report
     await this.prisma.report.create({
       data: {
         reporterId: userId,
@@ -166,7 +176,6 @@ export class PostsService {
       },
     });
 
-    // 2. Increment Report Count
     await this.prisma.post.update({
       where: { id: targetId },
       data: {
@@ -175,5 +184,49 @@ export class PostsService {
     });
 
     return { message: 'Report submitted' };
+  }
+
+  /**
+   * Like Post
+   */
+  async like(userId: number, postId: number) {
+    try {
+      await this.prisma.like.create({
+        data: {
+          userId,
+          postId,
+        },
+      });
+      return { success: true };
+    } catch (error) {
+      // P2002: Unique constraint failed
+      if (error.code === 'P2002') {
+        return { success: true, message: 'Already liked' };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Unlike Post
+   */
+  async unlike(userId: number, postId: number) {
+    try {
+      await this.prisma.like.delete({
+        where: {
+          userId_postId: {
+            userId,
+            postId,
+          },
+        },
+      });
+      return { success: true };
+    } catch (error) {
+      // P2025: Record to delete does not exist
+      if (error.code === 'P2025') {
+        return { success: true, message: 'Not liked yet' };
+      }
+      throw error;
+    }
   }
 }

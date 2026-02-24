@@ -9,6 +9,7 @@ import { PostsModule } from './posts/posts.module';
 import { AdminModule } from './admin/admin.module';
 import { WalletModule } from './wallet/wallet.module';
 import { ChatModule } from './chat/chat.module';
+import { CommentsModule } from './comments/comments.module';
 import { RedisModule } from './common/redis/redis.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { BanGuard } from './auth/ban.guard';
@@ -23,6 +24,7 @@ import { AliyunModule } from './common/aliyun/aliyun.module';
     AdminModule,
     WalletModule,
     ChatModule,
+    CommentsModule,
     RedisModule,
     AliyunModule,
   ],

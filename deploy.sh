@@ -65,8 +65,26 @@ check_connectivity() {
     fi
 }
 
+update_env() {
+    local key=$1
+    local value=$2
+    local env_file=".env"
+
+    if grep -q "^${key}=" "$env_file"; then
+        # Key exists, update it using sed
+        # Use different delimiter for sed to handle slashes in values
+        sed -i "s|^${key}=.*|${key}=${value}|" "$env_file"
+    else
+        # Key does not exist, append it
+        echo "${key}=${value}" >> "$env_file"
+    fi
+}
+
 configure_environment() {
     log_info "开始交互式配置..."
+
+    # Create .env if not exists
+    touch .env
 
     # API_DOMAIN
     while true; do
@@ -143,7 +161,7 @@ configure_environment() {
     read -p "请输入短信签名: " SMS_SIGN
     read -p "请输入实人认证场景 ID: " REAL_PERSON_SCENE_ID
 
-    # 原子写入 .env
+    # 幂等写入 .env
     ENV_FILE=".env"
     if [ -f "$ENV_FILE" ]; then
         BACKUP_FILE="$ENV_FILE.bak.$(date +%F_%H-%M-%S)"
@@ -151,25 +169,27 @@ configure_environment() {
         log_info "已备份现有 .env 至 $BACKUP_FILE"
     fi
 
-    cat > "$ENV_FILE" <<EOF
-API_DOMAIN=$API_DOMAIN
-ADMIN_DOMAIN=$ADMIN_DOMAIN
-ALIYUN_AK=$ALIYUN_AK
-ALIYUN_SK=$ALIYUN_SK
-OSS_BUCKET=$OSS_BUCKET
-OSS_ENDPOINT=$OSS_ENDPOINT
-OSS_BUCKET_ACL=$OSS_BUCKET_ACL
-SMS_TEMPLATE_CODE=$SMS_TEMPLATE_CODE
-SMS_SIGN=$SMS_SIGN
-REAL_PERSON_SCENE_ID=$REAL_PERSON_SCENE_ID
-# 数据库连接 (假设使用本地 docker-compose postgres 服务)
-DATABASE_URL="postgresql://postgres:postgres@postgres:5432/linxi_db?schema=public"
-# Redis (假设使用本地 docker-compose redis 服务)
-REDIS_HOST=redis
-REDIS_PORT=6379
-# JWT 密钥 (自动生成)
-JWT_SECRET=$(openssl rand -base64 32)
-EOF
+    update_env "API_DOMAIN" "$API_DOMAIN"
+    update_env "ADMIN_DOMAIN" "$ADMIN_DOMAIN"
+    update_env "ALIYUN_AK" "$ALIYUN_AK"
+    update_env "ALIYUN_SK" "$ALIYUN_SK"
+    update_env "OSS_BUCKET" "$OSS_BUCKET"
+    update_env "OSS_ENDPOINT" "$OSS_ENDPOINT"
+    update_env "OSS_BUCKET_ACL" "$OSS_BUCKET_ACL"
+    update_env "SMS_TEMPLATE_CODE" "$SMS_TEMPLATE_CODE"
+    update_env "SMS_SIGN" "$SMS_SIGN"
+    update_env "REAL_PERSON_SCENE_ID" "$REAL_PERSON_SCENE_ID"
+    
+    # Static values (update if needed, or keep appending if missing)
+    update_env "DATABASE_URL" '"postgresql://postgres:postgres@postgres:5432/linxi_db?schema=public"'
+    update_env "REDIS_HOST" "redis"
+    update_env "REDIS_PORT" "6379"
+    
+    # JWT Secret - generate only if missing
+    if ! grep -q "^JWT_SECRET=" "$ENV_FILE"; then
+        JWT_SECRET=$(openssl rand -base64 32)
+        echo "JWT_SECRET=$JWT_SECRET" >> "$ENV_FILE"
+    fi
 
     chmod 600 "$ENV_FILE"
     log_success "配置已保存至 .env (权限已限制)。"
@@ -266,6 +286,9 @@ deploy_frontend() {
     log_info "正在安装前端依赖..."
     npm install
 
+    log_info "正在清理旧构建产物..."
+    rm -rf dist
+
     log_info "正在构建前端..."
     # 设置构建时的 VITE_API_BASE_URL
     # 如果未包含 /v1 后缀，则自动追加
@@ -331,6 +354,29 @@ EOF
     systemctl reload nginx
 
     log_success "前端部署成功。"
+
+    # --- SSL 证书自动化 ---
+    log_info "正在为域名申请 SSL 证书..."
+    check_and_install certbot certbot
+    check_and_install python3-certbot-nginx python3-certbot-nginx
+
+    # 申请证书 (非交互式)
+    # 提取域名列表
+    DOMAINS="-d $ADMIN_HOST -d $API_HOST"
+    
+    # 使用 certbot 自动配置 Nginx
+    # --non-interactive: 非交互模式
+    # --agree-tos: 同意服务条款
+    # --redirect: 自动配置 HTTP -> HTTPS 重定向
+    # -m: 邮箱 (这里使用默认或提示用户输入，为简单起见暂用 admin@$ADMIN_HOST)
+    EMAIL="admin@$ADMIN_HOST"
+    
+    if certbot --nginx $DOMAINS --non-interactive --agree-tos --email "$EMAIL" --redirect; then
+        log_success "SSL 证书申请并安装成功！HTTPS 已启用。"
+    else
+        log_error "SSL 证书申请失败。请检查域名解析是否正确，或稍后手动运行 certbot。"
+        # 不退出脚本，因为部署已完成，只是 SSL 失败
+    fi
 }
 
 # --- 5. 安全与收尾 ---

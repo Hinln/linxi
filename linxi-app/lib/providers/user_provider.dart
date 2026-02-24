@@ -70,17 +70,23 @@ class UserProvider extends ChangeNotifier {
   Future<void> startRealNameVerification() async {
     _setLoading(true);
     try {
-      // 1. Get Verify ID and Token from backend
-      final response = await _api.post('/auth/real-name/initialize');
+      // 1. Get MetaInfo from Native SDK
+      final metaInfo = await NativeBridge.getMetaInfo();
+
+      // 2. Get Verify ID and Token from backend, sending metaInfo
+      final response = await _api.post('/auth/real-name/initialize', data: {
+        'metaInfo': metaInfo,
+      });
+
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = response.data;
         final verifyId = data['verifyId'];
         final verifyToken = data['verifyToken'];
 
-        // 2. Call Native SDK
+        // 3. Call Native SDK to start verify
         if (verifyId != null && verifyToken != null) {
            await NativeBridge.startFaceVerify(verifyId, verifyToken);
-           // 3. Refresh status after verification
+           // 4. Refresh status after verification
            await loadUser();
         }
       }

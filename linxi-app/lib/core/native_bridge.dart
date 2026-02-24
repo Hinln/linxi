@@ -3,6 +3,16 @@ import 'package:flutter/services.dart';
 class NativeBridge {
   static const MethodChannel _channel = MethodChannel('com.linxi.app/face_verify');
 
+  /// Gets the MetaInfo required for initialization.
+  static Future<String> getMetaInfo() async {
+    try {
+      final String metaInfo = await _channel.invokeMethod('getMetaInfo');
+      return metaInfo;
+    } on PlatformException catch (e) {
+      throw 'Failed to get meta info: ${e.message}';
+    }
+  }
+
   /// Starts the face verification process.
   /// 
   /// Returns a [Future] that completes with the verification result.
