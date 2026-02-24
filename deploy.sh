@@ -66,8 +66,7 @@ check_ports() {
   app:
     networks:
       - 1panel-network
-      - linxi-network
-"
+      - linxi-network"
     
     # 1Panel 端口复用逻辑
     local has_1panel=false
@@ -87,13 +86,11 @@ check_ports() {
                     
                     # 禁用对应服务 - Accumulate to variable
                     if [[ "$port" == "5432" ]]; then
-                        OVERRIDE_CONTENT="${OVERRIDE_CONTENT}  postgres: { profiles: ['donotstart'] }
-"
+                        OVERRIDE_CONTENT+=$'\n  postgres: { profiles: [\'donotstart\'] }'
                         log_success "已禁用内置 Postgres 容器。"
                     fi
                     if [[ "$port" == "6379" ]]; then
-                        OVERRIDE_CONTENT="${OVERRIDE_CONTENT}  redis: { profiles: ['donotstart'] }
-"
+                        OVERRIDE_CONTENT+=$'\n  redis: { profiles: [\'donotstart\'] }'
                         log_success "已禁用内置 Redis 容器。"
                     fi
                     
@@ -109,11 +106,7 @@ check_ports() {
     done
     
     # Append network definition
-    OVERRIDE_CONTENT="${OVERRIDE_CONTENT}
-networks:
-  1panel-network:
-    external: true
-"
+    OVERRIDE_CONTENT+=$'\n\nnetworks:\n  1panel-network:\n    external: true'
     
     if $conflict; then
         read -p "检测到未解决的端口冲突，是否继续? (y/n): " CONTINUE </dev/tty
@@ -361,7 +354,7 @@ deploy_backend() {
 update_env() {
     local key=$1
     local value=$2
-    local env_file=".env"
+    local env_file="linxi-server/.env"
 
     if grep -q "^${key}=" "$env_file"; then
         sed -i "s|^${key}=.*|${key}=${value}|" "$env_file"
@@ -372,8 +365,8 @@ update_env() {
 
 configure_environment() {
     log_info "开始交互式配置..."
-    touch .env
-
+    touch linxi-server/.env
+    
     # 域名
     while true; do
         read -p "请输入后端 API 域名 (例如 https://api.example.com): " API_DOMAIN </dev/tty
@@ -477,14 +470,14 @@ configure_environment() {
         update_env "REDIS_PASSWORD" "$REDIS_PASSWORD"
     fi
     
-    if ! grep -q "^JWT_SECRET=" ".env"; then
-        echo "JWT_SECRET=$(openssl rand -base64 32)" >> ".env"
+    if ! grep -q "^JWT_SECRET=" "linxi-server/.env"; then
+        echo "JWT_SECRET=$(openssl rand -base64 32)" >> "linxi-server/.env"
     fi
-    if ! grep -q "^CRYPTO_SECRET_KEY=" ".env"; then
-        echo "CRYPTO_SECRET_KEY=$(openssl rand -base64 32)" >> ".env"
+    if ! grep -q "^CRYPTO_SECRET_KEY=" "linxi-server/.env"; then
+        echo "CRYPTO_SECRET_KEY=$(openssl rand -base64 32)" >> "linxi-server/.env"
     fi
 
-    chmod 600 ".env"
+    chmod 600 "linxi-server/.env"
 }
 
 validate_domain() {
@@ -519,6 +512,7 @@ deploy_frontend() {
 # --- 主流程 ---
 
 main() {
+    TARGET_DIR=$(pwd)
     clear
     echo "=================================================="
     echo "       LinXi (灵犀) 一键部署脚本 v2.0            "
