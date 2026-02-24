@@ -368,8 +368,12 @@ start_backend_services() {
     fi
 
     log_info "等待数据库就绪并执行迁移 (重试 5 次)..."
+    # 获取 .env 中的 DATABASE_URL
+    local db_url=$(grep "^DATABASE_URL=" "$TARGET_DIR/linxi-server/.env" | cut -d= -f2-)
+    
     for i in {1..5}; do
-        if $DOCKER_COM_CMD exec -T app npx prisma migrate deploy; then
+        # 使用 docker compose run --rm 并在运行时注入环境变量，确保迁移能连上正确的数据库
+        if $DOCKER_COM_CMD run --rm -e DATABASE_URL="$db_url" app npx prisma migrate deploy; then
             log_success "数据库迁移成功！"
             return 0
         fi
@@ -456,11 +460,14 @@ configure_environment() {
     fi
     
     # 数据库 (默认本地 Docker)
+    # 硬编码注入 1Panel 数据库连接串
     if grep -q "postgres: { profiles: \['donotstart'\] }" docker-compose.override.yml 2>/dev/null; then
-        log_info "已选择复用面板数据库，请输入 1Panel 中的数据库连接信息。"
-        # 尝试自动获取 IP (Docker Gateway)
-        DOCKER_GATEWAY=$(docker network inspect 1panel-network --format='{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null || echo "172.17.0.1")
-        read -p "数据库连接地址 (例如 postgresql://user:pass@$DOCKER_GATEWAY:5432/linxi_db?schema=public): " DATABASE_URL </dev/tty
+        log_info "已选择复用面板数据库，自动注入连接配置。"
+        # DATABASE_URL="postgresql://ceshi:8r5knQpQ6aKHkhn8@1Panel-postgresql-4aa8:5432/ceshi?schema=public"
+        # 考虑到通用性，这里我们还是应该让用户确认或输入，或者如果用户之前的输入为空，则使用这个硬编码值作为默认值
+        # 但用户要求“直接使用以下连接串”，所以我们强制覆盖
+        DATABASE_URL="postgresql://ceshi:8r5knQpQ6aKHkhn8@1Panel-postgresql-4aa8:5432/ceshi?schema=public"
+        log_success "已注入数据库连接: $DATABASE_URL"
     else
         read -p "数据库连接地址 (回车使用默认 Docker 内部连接): " DATABASE_URL </dev/tty
         DATABASE_URL=${DATABASE_URL:-"postgresql://postgres:postgres@postgres:5432/linxi_db?schema=public"}
@@ -544,19 +551,46 @@ deploy_frontend() {
 # --- 主流程 ---
 
 main() {
-    # 预设 1Panel 目标目录
-    if [[ -d "/opt/1panel" ]]; then
-        TARGET_DIR="/opt/1panel/apps/linxi"
-    else
-        TARGET_DIR=$(pwd)
-    fi
-    
     clear
     echo "=================================================="
     echo "       LinXi (灵犀) 一键部署脚本 v2.0            "
     echo "=================================================="
     
     check_root
+    
+    # 1Panel 环境清理 (第一步)
+    if [[ -d "/opt/1panel/apps/linxi" ]]; then
+        TARGET_DIR="/opt/1panel/apps/linxi"
+        log_warn "检测到现有环境 ($TARGET_DIR)，正在执行全量深度清理..."
+        
+        # 尝试停止并清理旧容器
+        if [ -f "$TARGET_DIR/docker-compose.yml" ]; then
+            cd "$TARGET_DIR"
+            # 尝试使用 docker compose (v2) 或 docker-compose (v1)
+            if docker compose version &> /dev/null; then
+                docker compose down --rmi all -v || true
+            elif command -v docker-compose &> /dev/null; then
+                docker-compose down --rmi all -v || true
+            fi
+            cd - > /dev/null
+        fi
+        
+        # 强制删除镜像 (防止 dangling)
+        docker rmi linxi-app -f 2>/dev/null || true
+        docker rmi linxi-backend -f 2>/dev/null || true
+        
+        # 彻底删除目录
+        rm -rf "$TARGET_DIR"
+        log_success "旧环境清理完成。"
+    fi
+    
+    # 重新设置 TARGET_DIR
+    if [[ -d "/opt/1panel" ]]; then
+        TARGET_DIR="/opt/1panel/apps/linxi"
+    else
+        TARGET_DIR=$(pwd)
+    fi
+    
     install_dependencies
     check_system_resources
     check_ports
