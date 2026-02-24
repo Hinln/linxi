@@ -41,7 +41,7 @@ check_system_resources() {
     
     if (( $(echo "$total_mem_gb < 3.5" | bc -l) )); then
         log_warn "内存小于 3.5GB，可能导致构建失败。"
-        read -p "是否自动创建 4GB Swap 分区? (y/n, 默认 y): " CREATE_SWAP
+        read -p "是否自动创建 4GB Swap 分区? (y/n, 默认 y): " CREATE_SWAP </dev/tty
         CREATE_SWAP=${CREATE_SWAP:-y}
         
         if [[ "$CREATE_SWAP" == "y" ]]; then
@@ -80,7 +80,7 @@ check_ports() {
             
             # 自动降级逻辑
             if [[ "$port" == "5432" || "$port" == "6379" ]] && $has_1panel; then
-                read -p "检测到端口 $port 被占用且存在 1Panel。是否复用面板数据库/Redis？(y/n, 默认 y): " REUSE_DB
+                read -p "检测到端口 $port 被占用且存在 1Panel。是否复用面板数据库/Redis？(y/n, 默认 y): " REUSE_DB </dev/tty
                 REUSE_DB=${REUSE_DB:-y}
                 if [[ "$REUSE_DB" == "y" ]]; then
                     log_info "已选择复用面板服务，将在后续步骤中配置连接。"
@@ -116,7 +116,7 @@ networks:
 "
     
     if $conflict; then
-        read -p "检测到未解决的端口冲突，是否继续? (y/n): " CONTINUE
+        read -p "检测到未解决的端口冲突，是否继续? (y/n): " CONTINUE </dev/tty
         if [[ "$CONTINUE" != "y" ]]; then
             exit 1
         fi
@@ -141,7 +141,7 @@ check_domain_resolution() {
         log_error "当前解析 IP: ${resolved_ip:-未解析}"
         log_error "服务器 IP: $current_ip"
         log_warn "请立即去域名后台修改解析，否则 SSL 申请必失败！"
-        read -p "是否已修复并继续? (y/n): " RESOLVED
+        read -p "是否已修复并继续? (y/n): " RESOLVED </dev/tty
         if [[ "$RESOLVED" != "y" ]]; then exit 1; fi
     else
         log_success "域名解析验证通过。"
@@ -176,7 +176,7 @@ adapt_1panel() {
     # 路径识别
     if [[ -d "/opt/1panel" ]]; then
         log_success "检测到 1Panel 安装目录。"
-        read -p "是否将项目部署到 1Panel 应用目录 (/opt/1panel/apps/linxi)? (y/n, 默认 y): " MOVE_DIR
+        read -p "是否将项目部署到 1Panel 应用目录 (/opt/1panel/apps/linxi)? (y/n, 默认 y): " MOVE_DIR </dev/tty
         MOVE_DIR=${MOVE_DIR:-y}
         
         if [[ "$MOVE_DIR" == "y" ]]; then
@@ -376,7 +376,7 @@ configure_environment() {
 
     # 域名
     while true; do
-        read -p "请输入后端 API 域名 (例如 https://api.example.com): " API_DOMAIN
+        read -p "请输入后端 API 域名 (例如 https://api.example.com): " API_DOMAIN </dev/tty
         if validate_domain "$API_DOMAIN"; then
             check_domain_resolution "$API_DOMAIN"
             break
@@ -384,7 +384,7 @@ configure_environment() {
     done
 
     while true; do
-        read -p "请输入管理后台域名 (例如 https://admin.example.com): " ADMIN_DOMAIN
+        read -p "请输入管理后台域名 (例如 https://admin.example.com): " ADMIN_DOMAIN </dev/tty
         if validate_domain "$ADMIN_DOMAIN"; then
             check_domain_resolution "$ADMIN_DOMAIN"
             break
@@ -392,20 +392,38 @@ configure_environment() {
     done
 
     # 阿里云
-    read -p "阿里云 AccessKey ID: " ALIYUN_AK
-    read -s -p "阿里云 AccessKey Secret: " ALIYUN_SK
+    read -p "阿里云 AccessKey ID: " ALIYUN_AK </dev/tty
+    read -s -p "阿里云 AccessKey Secret: " ALIYUN_SK </dev/tty
     echo ""
-    read -p "OSS Bucket 名称: " OSS_BUCKET
-    read -p "OSS Region (默认 oss-cn-hangzhou.aliyuncs.com): " OSS_ENDPOINT
+    read -p "OSS Bucket 名称: " OSS_BUCKET </dev/tty
+    read -p "OSS Region (默认 oss-cn-hangzhou.aliyuncs.com): " OSS_ENDPOINT </dev/tty
     OSS_ENDPOINT=${OSS_ENDPOINT:-oss-cn-hangzhou.aliyuncs.com}
     
+    # OSS Bucket ACL
+    while true; do
+        read -p "OSS Bucket 是私有(private)还是公共读(public-read)? (输入 1: 私有, 2: 公共读): " ACL_CHOICE </dev/tty
+        case $ACL_CHOICE in
+            1)
+                OSS_BUCKET_ACL="private"
+                break
+                ;;
+            2)
+                OSS_BUCKET_ACL="public-read"
+                break
+                ;;
+            *)
+                log_warn "无效输入，请输入 1 或 2"
+                ;;
+        esac
+    done
+
     # 短信服务
-    read -p "短信签名 (ALIYUN_SMS_SIGN_NAME, 默认 LinXi): " SMS_SIGN_NAME
+    read -p "短信签名 (ALIYUN_SMS_SIGN_NAME, 默认 LinXi): " SMS_SIGN_NAME </dev/tty
     SMS_SIGN_NAME=${SMS_SIGN_NAME:-LinXi}
-    read -p "短信模板 ID (ALIYUN_SMS_TEMPLATE_CODE, 例如 SMS_123456789): " SMS_TEMPLATE_CODE
+    read -p "短信模板 ID (ALIYUN_SMS_TEMPLATE_CODE, 例如 SMS_123456789): " SMS_TEMPLATE_CODE </dev/tty
     
     # 实人认证
-    read -p "实人认证场景 ID (ALIYUN_REAL_PERSON_SCENE_ID, 默认 100000): " RP_SCENE_ID
+    read -p "实人认证场景 ID (ALIYUN_REAL_PERSON_SCENE_ID, 默认 100000): " RP_SCENE_ID </dev/tty
     RP_SCENE_ID=${RP_SCENE_ID:-100000}
     
     if [[ -z "$SMS_TEMPLATE_CODE" ]]; then
@@ -417,9 +435,9 @@ configure_environment() {
         log_info "已选择复用面板数据库，请输入 1Panel 中的数据库连接信息。"
         # 尝试自动获取 IP (Docker Gateway)
         DOCKER_GATEWAY=$(docker network inspect 1panel-network --format='{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null || echo "172.17.0.1")
-        read -p "数据库连接地址 (例如 postgresql://user:pass@$DOCKER_GATEWAY:5432/linxi_db?schema=public): " DATABASE_URL
+        read -p "数据库连接地址 (例如 postgresql://user:pass@$DOCKER_GATEWAY:5432/linxi_db?schema=public): " DATABASE_URL </dev/tty
     else
-        read -p "数据库连接地址 (回车使用默认 Docker 内部连接): " DATABASE_URL
+        read -p "数据库连接地址 (回车使用默认 Docker 内部连接): " DATABASE_URL </dev/tty
         DATABASE_URL=${DATABASE_URL:-"postgresql://postgres:postgres@postgres:5432/linxi_db?schema=public"}
     fi
     
@@ -428,16 +446,18 @@ configure_environment() {
         log_info "已选择复用面板 Redis，请输入 1Panel 中的 Redis 连接信息。"
         DOCKER_GATEWAY=$(docker network inspect 1panel-network --format='{{range .IPAM.Config}}{{.Gateway}}{{end}}' 2>/dev/null || echo "172.17.0.1")
         
-        read -p "Redis 主机 (建议使用 Docker 网关 $DOCKER_GATEWAY): " REDIS_HOST
+        read -p "Redis 主机 (建议使用 Docker 网关 $DOCKER_GATEWAY): " REDIS_HOST </dev/tty
         REDIS_HOST=${REDIS_HOST:-$DOCKER_GATEWAY}
-        read -p "Redis 端口 (默认 6379): " REDIS_PORT
+        read -p "Redis 端口 (默认 6379): " REDIS_PORT </dev/tty
         REDIS_PORT=${REDIS_PORT:-6379}
     else
-        read -p "Redis 主机 (默认 redis): " REDIS_HOST
+        read -p "Redis 主机 (默认 redis): " REDIS_HOST </dev/tty
         REDIS_HOST=${REDIS_HOST:-redis}
-        read -p "Redis 端口 (默认 6379): " REDIS_PORT
+        read -p "Redis 端口 (默认 6379): " REDIS_PORT </dev/tty
         REDIS_PORT=${REDIS_PORT:-6379}
     fi
+    read -s -p "请输入 Redis 密码 (无密码直接回车): " REDIS_PASSWORD </dev/tty
+    echo ""
     
     # 写入 .env
     update_env "API_DOMAIN" "$API_DOMAIN"
@@ -446,12 +466,16 @@ configure_environment() {
     update_env "ALIYUN_ACCESS_KEY_SECRET" "$ALIYUN_SK"
     update_env "ALIYUN_OSS_BUCKET" "$OSS_BUCKET"
     update_env "ALIYUN_OSS_REGION" "$OSS_ENDPOINT"
+    update_env "ALIYUN_OSS_BUCKET_ACL" "$OSS_BUCKET_ACL"
     update_env "ALIYUN_SMS_SIGN_NAME" "$SMS_SIGN_NAME"
     update_env "ALIYUN_SMS_TEMPLATE_CODE" "$SMS_TEMPLATE_CODE"
     update_env "ALIYUN_REAL_PERSON_SCENE_ID" "$RP_SCENE_ID"
     update_env "DATABASE_URL" "$DATABASE_URL"
     update_env "REDIS_HOST" "$REDIS_HOST"
     update_env "REDIS_PORT" "$REDIS_PORT"
+    if [[ -n "$REDIS_PASSWORD" ]]; then
+        update_env "REDIS_PASSWORD" "$REDIS_PASSWORD"
+    fi
     
     if ! grep -q "^JWT_SECRET=" ".env"; then
         echo "JWT_SECRET=$(openssl rand -base64 32)" >> ".env"
